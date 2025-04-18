@@ -10,9 +10,10 @@ from utils import *
 from rich.console import Console
 from rich.panel import Panel
 from rich.logging import RichHandler
+from sub_prompts import *
 
 # Load environment variables from .env file
-load_dotenv("../.env")
+load_dotenv()
 
 # Initialize OpenAI client
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -22,7 +23,7 @@ console = Console()
 
 # Configure logging
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format="%(message)s",
     datefmt="[%X]",
     handlers=[RichHandler(rich_tracebacks=True)],
@@ -33,41 +34,6 @@ max_iterations = 10
 last_response = None
 iteration = 0
 iteration_response = []
-
-
-async def generate_with_timeout(prompt, timeout=10):
-    """Generate content with a timeout"""
-    print("Starting LLM generation...")
-    try:
-        # Convert the synchronous chat.completions.create call to run in a thread
-        loop = asyncio.get_event_loop()
-        response = await asyncio.wait_for(
-            loop.run_in_executor(
-                None,
-                lambda: client.chat.completions.create(
-                    model="gpt-4o",
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": "You are an expert CNC agent who has a PhD. in the engineering discipline of Manufacturing Sciences. You are a very hands on agent and have practical knowledge about the working of a CNC (Compute Numeric Controlled (Lathe)).",
-                        },
-                        {"role": "user", "content": prompt},
-                    ],
-                    temperature=0.1,
-                    max_tokens=1000,
-                    response_format={"type": "json_object"},
-                ),
-            ),
-            timeout=timeout,
-        )
-        print("LLM generation completed")
-        return response.choices[0].message.content
-    except TimeoutError:
-        print("LLM generation timed out!")
-        raise
-    except Exception as e:
-        print(f"Error in LLM generation: {e}")
-        raise
 
 
 def reset_state():
@@ -85,7 +51,7 @@ async def main():
         # Create a single MCP server connection
         print("Establishing connection to MCP server...")
         server_params = StdioServerParameters(
-            command="python", args=["mcp_cnc_server.py"]
+            command="python", args=["mcp_action_server.py"]
         )
 
         async with stdio_client(server_params) as (read, write):
@@ -110,12 +76,17 @@ async def main():
                         try:
                             # Get tool properties
                             params = tool.inputSchema
+
                             desc = getattr(
                                 tool, "description", "No description available"
                             )
                             name = getattr(tool, "name", f"tool_{i}")
 
                             if name == "show_reasoning":
+                                # import code
+
+                                # code.interact(local=locals())
+
                                 tool_desc = get_reasoning_tool_description(
                                     tool_number=i + 1
                                 )
@@ -151,41 +122,17 @@ async def main():
                 print("Created system prompt...")
 
                 system_prompt = f"""
-
-GENERAL INSTRUCTIONS:
---------------------------------
-You are a CNC machining agent expert at solving problems in iterations. 
-You can reason, you are capable of planning and thinking step by step. 
-For any given problem, you first identify the problem, break it down into smaller steps, come up with a plan and then execute the plan only ONE STEP AT A TIME.
-You can reason in multiple ways. Since you are good at CNC operations, you can use different modes of reasoning like spatial (Understading geometry, understanding the spatial relationships between the parts), algorithmic (sequence of operations, mixing and matching operations to perform complex tasks etc.), optimization (which code is more efficient, would lead to less wastage and give best results both from the life of tool, quality of the part, convenience of the operator etc.), safety (safety of the operator, safety of the machine, safety of the part etc.), other (Any miscellaneous thought or reasoning that you may think and feel is relevant). It will help you to first identify the kind of reasoning you would like to use (one or multiple) before coming up with the plan. 
-You have access to various tools to perform different operations on the CNC machine. 
-Additionally, you also have access to a paint tool. Use it like a notepad. Gather all the commands obtained from the iterations and stitch them together to form a comprehensive program that can be run on the CNC machine. This is what the paint tool needs to show to the user i.e. the final program. Do not forget to add comments to the program to make it understandable to the user.
+{general_instructions}
 
 Here is a list of all the tools available at your disposal:
 {tools_description}
 
-SPECIAL INSTRUCTIONS:
---------------------------------
-- Be conservative while calling the tools. 
-    - Only call a tool if you are sure that it will help you solve the problem. 
-    - Do not call the same tool with the same parameters multiple times unless necessary.
-- Only give FINAL_ANSWER when you have completed all necessary calculations
-- If you are asked to display the answer in a paint tool, you must first use the paint tool and do that before giving out the final answer.
-- For any given problem, ALWAYS THINK ALL THE STEPS THROUGH in the first pass and display the reasoning to the user.
-- After each arithmetic operation that you perform, you MUST VERIFY if the last performed step is correct or not. This function can be called multiple times. Just don't call it in succession. Call if after every arithmetic operation. IFF the verification is dubious or can be interpreted in different ways, you are allowed to call it in succession.
+{special_instructions}
 
-FALLBACK HANDLING:
---------------------------------
-- If a tool fails to return a valid response, analyze the failure using internal reasoning and retry with modified parameters or skip to an alternative step as you deem necessary.
-- If you are uncertain about a step, clearly state the uncertainty and explain why. Use `verify_step()` tool.
-- If unable to generate a full solution, output a partial result and clearly state what’s missing and why. Use `final_answer` with a status message; mention the reason why failure has happened very explicitly and is it the lack of tools, lack of your ability to comprehend the task or lack of clarity in terms of the user's instruction that is the primary cause why the request cannot be fulfilled completely.
+{fallback_handling}
 
-You must respond with a json object which abides to the following schema:
-```json
-{json.dumps(response_dict, indent=2)}
-```
+{response_instruction}
 
-Please note that the argument dict in the above schema MUST contain the necessary arguments of the tool call which is provided in the list of tools available at your disposal above.
 """
 
                 query = """
@@ -201,6 +148,10 @@ Once you have the code to perform this operation, visualize the answer in a pain
                 global iteration, last_response
 
                 while iteration < max_iterations:
+
+                    import code
+
+                    code.interact(local=locals())
 
                     # Introduce a sleep to be generous to the cloud provider
                     # For free tier, we have a max of 15 requests per minute
@@ -218,12 +169,8 @@ Once you have the code to perform this operation, visualize the answer in a pain
                     print("Preparing to generate LLM response...")
                     prompt = f"{system_prompt}\n\nQuery: {current_query}"
 
-                    import code
-
-                    code.interact(local=dict(globals(), **locals()))
-
                     try:
-                        response_text = await generate_with_timeout(prompt)
+                        response_text = await generate_with_timeout(client, prompt)
                         console.print(
                             Panel(
                                 response_text,
@@ -276,10 +223,21 @@ Once you have the code to perform this operation, visualize the answer in a pain
                         logger.debug(f"Tool schema: {tool.inputSchema}")
 
                         # Call the tool with the provided arguments
+                        # Wrap arguments in the appropriate input schema
+                        if function_call.tool_name.value == "show_reasoning":
+                            arguments = {
+                                "input": {
+                                    "reasoning": function_call.arguments["reasoning"]
+                                }
+                            }
+                        else:
+                            arguments = function_call.arguments
+
                         result = await session.call_tool(
                             function_call.tool_name.value,
-                            arguments=function_call.arguments,
+                            arguments=arguments,
                         )
+
                         logger.debug(f"Raw result: {result}")
 
                         # Get the full result content
