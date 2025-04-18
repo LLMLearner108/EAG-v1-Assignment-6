@@ -11,6 +11,10 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.logging import RichHandler
 from sub_prompts import *
+from uuid import uuid4
+from memory import *
+from perception import *
+from decision import *
 
 # Load environment variables from .env file
 load_dotenv()
@@ -36,17 +40,24 @@ iteration = 0
 iteration_response = []
 
 
-def reset_state():
-    """Reset all global variables to their initial state"""
-    global last_response, iteration, iteration_response
-    last_response = None
-    iteration = 0
-    iteration_response = []
-
-
-async def main():
-    reset_state()  # Reset at the start of main
+async def main(user_preferences):
     print("Starting main execution...")
+    mem = Memory()
+    session_id = str(uuid4())
+    mem.session[session_id] = []
+
+    # Ask the user preferences before beginning of the agentic workflow
+    mem.preferences = user_preferences
+
+    # User query
+    query = """
+TASK:
+--------------------------------
+You are given a cylindrical rod of length 10 cm and diameter 5 cm. You need to turn the rod to a diameter of 3 cm without altering the length of the rod. You need to come up with a program to do this. Remember turning is done in the XZ plane.
+
+Once you have the code to perform this operation, visualize the answer in a paint tool.
+"""
+
     try:
         # Create a single MCP server connection
         print("Establishing connection to MCP server...")
@@ -64,98 +75,37 @@ async def main():
                 print("Requesting tool list...")
                 tools_result = await session.list_tools()
                 tools = tools_result.tools
-                print(f"Successfully retrieved {len(tools)} tools")
+                tools_description = get_description_from_tools(tools)
 
-                # Create system prompt with available tools
-                print("Creating system prompt...")
-                print(f"Number of tools: {len(tools)}")
+                # Create perception output
+                perception_prompt = build_perception_prompt(tools_description, query)
+                perception_response_text = await generate_with_timeout(
+                    client, perception_prompt
+                )
 
-                try:
-                    tools_description = []
-                    for i, tool in enumerate(tools):
-                        try:
-                            # Get tool properties
-                            params = tool.inputSchema
+                # Validate the perceived output
+                PerceptionObject.model_validate_json(perception_response_text)
 
-                            desc = getattr(
-                                tool, "description", "No description available"
-                            )
-                            name = getattr(tool, "name", f"tool_{i}")
+                import code
 
-                            if name == "show_reasoning":
-                                # import code
+                code.interact(local=locals())
 
-                                # code.interact(local=locals())
+                mem["session"][session_id].append(
+                    f"I have percieved this information from the given query {perception_response_text}"
+                )
 
-                                tool_desc = get_reasoning_tool_description(
-                                    tool_number=i + 1
-                                )
-                                tools_description.append(tool_desc)
-                                print(f"Added description for tool: {tool_desc}")
-                                continue
+                import code
 
-                            # Format the input schema in a more readable way
-                            if "properties" in params:
-                                param_details = []
-                                for param_name, param_info in params[
-                                    "properties"
-                                ].items():
-                                    param_type = param_info.get("type", "unknown")
-                                    param_details.append(f"{param_name}: {param_type}")
-                                params_str = ", ".join(param_details)
-                            else:
-                                params_str = "no parameters"
-
-                            tool_desc = f"{i+1}. {name}({params_str}) - {desc}"
-                            tools_description.append(tool_desc)
-                            print(f"Added description for tool: {tool_desc}")
-                        except Exception as e:
-                            print(f"Error processing tool {i}: {e}")
-                            tools_description.append(f"{i+1}. Error processing tool")
-
-                    tools_description = "\n".join(tools_description)
-                    print("Successfully created tools description")
-                except Exception as e:
-                    print(f"Error creating tools description: {e}")
-                    tools_description = "Error loading tools"
-
-                print("Created system prompt...")
-
-                system_prompt = f"""
-{general_instructions}
-
-Here is a list of all the tools available at your disposal:
-{tools_description}
-
-{special_instructions}
-
-{fallback_handling}
-
-{response_instruction}
-
-"""
-
-                query = """
-TASK:
---------------------------------
-You are given a cylindrical rod of length 10 cm and diameter 5 cm. You need to turn the rod to a diameter of 3 cm without altering the length of the rod. You need to come up with a program to do this. Remember turning is done in the XZ plane.
-
-Once you have the code to perform this operation, visualize the answer in a paint tool.
-                """
-                print("Starting iteration loop...")
-
-                # Use global iteration variables
-                global iteration, last_response
+                code.interact(local=locals())
 
                 while iteration < max_iterations:
-
-                    import code
-
-                    code.interact(local=locals())
 
                     # Introduce a sleep to be generous to the cloud provider
                     # For free tier, we have a max of 15 requests per minute
                     await asyncio.sleep(3)
+
+                    # Do a perception iteration
+
                     print(f"\n--- Iteration {iteration + 1} ---")
                     if last_response is None:
                         current_query = query
@@ -168,6 +118,7 @@ Once you have the code to perform this operation, visualize the answer in a pain
                     # Get model's response with timeout
                     print("Preparing to generate LLM response...")
                     prompt = f"{system_prompt}\n\nQuery: {current_query}"
+                    print(prompt)
 
                     try:
                         response_text = await generate_with_timeout(client, prompt)
@@ -222,20 +173,9 @@ Once you have the code to perform this operation, visualize the answer in a pain
                         logger.debug(f"Found tool: {tool.name}")
                         logger.debug(f"Tool schema: {tool.inputSchema}")
 
-                        # Call the tool with the provided arguments
-                        # Wrap arguments in the appropriate input schema
-                        if function_call.tool_name.value == "show_reasoning":
-                            arguments = {
-                                "input": {
-                                    "reasoning": function_call.arguments["reasoning"]
-                                }
-                            }
-                        else:
-                            arguments = function_call.arguments
-
                         result = await session.call_tool(
                             function_call.tool_name.value,
-                            arguments=arguments,
+                            arguments=function_call.arg,
                         )
 
                         logger.debug(f"Raw result: {result}")
@@ -288,8 +228,9 @@ Once you have the code to perform this operation, visualize the answer in a pain
 
         traceback.print_exc()
     finally:
-        reset_state()  # Reset at the end of main
+        pass
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    preferences = input("Enter your user preferences please.\n\n")
+    asyncio.run(main(preferences))
