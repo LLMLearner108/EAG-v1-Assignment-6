@@ -1,0 +1,15 @@
+[project]
+name = "eag-v1-assignment-6"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "mcp>=1.6.0",
+    "openai>=1.75.0",
+    "pillow>=11.2.1",
+    "pyautogui>=0.9.54",
+    "python-dotenv>=1.1.0",
+    "rich>=14.0.0",
+    "typer-cli>=0.15.2",
+]
