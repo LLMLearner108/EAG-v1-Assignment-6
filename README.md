@@ -22,6 +22,7 @@ The agent follows a Perception -> Memory -> Decision -> Action framework:
    - Makes decisions about which tool to execute next
    - Validates decisions before execution
    - Ensures alignment with task goals
+   - At present, `code.interact()` sits in the decision class basically to pause execution so that the user can gain visibility into what all has happened and what the Agent has interpreted so far. Feel free to comment this if you want to step out of debugging mode and use agent directly.
 
 4. **Action**: The `Action` class:
    - Executes tool calls based on decisions
