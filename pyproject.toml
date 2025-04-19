@@ -1,7 +1,7 @@
 [project]
 name = "eag-v1-assignment-6"
 version = "0.1.0"
-description = "Add your description here"
+description = "Modified the fifth assignment in the course and create a structure for the agent i.e. Perception -> Memory -> Decision -> Action"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -9,6 +9,7 @@ dependencies = [
     "openai>=1.75.0",
     "pillow>=11.2.1",
     "pyautogui>=0.9.54",
+    "pydantic>=2.11.3",
     "python-dotenv>=1.1.0",
     "rich>=14.0.0",
     "typer-cli>=0.15.2",

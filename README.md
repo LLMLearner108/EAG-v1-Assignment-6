@@ -2,6 +2,58 @@
 
 This project implements an AI agent specialized in CNC (Computer Numerical Control) machining operations. The agent is designed to generate CNC programs for specific machining tasks using an iterative reasoning approach.
 
+## Architecture
+
+The agent follows a Perception -> Memory -> Decision -> Action framework:
+
+1. **Perception**: The agent first understands the task requirements through the `PerceptionObject` class, which:
+   - Captures task details, dimensions, and operations
+   - Validates the understanding using Pydantic models
+   - Provides structured input for decision making
+
+2. **Memory**: The `Memory` class manages:
+   - User preferences and session-specific information
+   - History of tool executions and their results
+   - Context for decision making
+   - User preferences can be added at the start of execution through the `preferences` list
+
+3. **Decision**: The `Decision` class:
+   - Constructs prompts based on available tools and memory
+   - Makes decisions about which tool to execute next
+   - Validates decisions before execution
+   - Ensures alignment with task goals
+
+4. **Action**: The `Action` class:
+   - Executes tool calls based on decisions
+   - Handles tool execution results
+   - Stores execution history in memory
+   - Manages the continuation state
+
+## Input/Output Validation
+
+The project uses `mcp_schemas.py` to ensure consistent input and output validation:
+
+1. **Input Schemas**: Each tool has a corresponding input schema (e.g., `ShowReasoningInput`, `DoTurningInput`) that:
+   - Defines required parameters
+   - Validates input types
+   - Provides clear documentation
+
+2. **Output Schemas**: Each tool has a corresponding output schema (e.g., `GCodeOutput`, `TextContentOutput`) that:
+   - Standardizes output format
+   - Ensures consistent response structure
+   - Makes parsing easier for subsequent calls
+
+## Prompt Management
+
+Prompts are broken down into reusable components in `sub_prompts.py`:
+
+1. **General Instructions**: Core agent capabilities and reasoning modes
+2. **Special Instructions**: Tool usage guidelines and constraints
+3. **Fallback Handling**: Error handling and recovery strategies
+4. **Response Instructions**: Format requirements for different types of responses
+
+There are two additional components for telling what output format the perception step should follow and what output format the decision step should follow. Perception and Decision are the only components which perform LLM Calls.
+
 ## Task Description
 
 The agent is given a specific CNC machining task:
@@ -14,14 +66,14 @@ The agent is given a specific CNC machining task:
 
 2. Add your OpenAI API key: `OPENAI_API_KEY=your_api_key_here`
 
-3. Navigate to the `modified_assignment_4` directory:
-```bash
-cd modified_assignment_4
-```
-
-4. Run the MCP client:
+3. Run the MCP client:
 ```bash
 python mcp_client.py
+```
+
+4. If you have uv installed, then simply run
+```bash
+uv run mcp_client.py
 ```
 
 The program will:
@@ -57,10 +109,3 @@ The agent includes fallback mechanisms:
 - Clearly states uncertainties and reasons for them
 - Provides partial solutions with explanations if a complete solution isn't possible
 - Explicitly communicates the reasons for any failures
-
-## Notes
-
-- The agent uses GPT-4o for reasoning and program generation
-- Each iteration is limited to 10 steps
-- The program includes a 3-second delay between iterations to respect API rate limits
-- The paint tool is used as a notepad to display the final CNC program

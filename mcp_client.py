@@ -15,6 +15,7 @@ from uuid import uuid4
 from memory import *
 from perception import *
 from decision import *
+from action import *
 
 # Load environment variables from .env file
 load_dotenv()
@@ -36,27 +37,33 @@ logger = logging.getLogger("mcp_client")
 
 max_iterations = 10
 last_response = None
-iteration = 0
-iteration_response = []
 
 
 async def main(user_preferences):
     print("Starting main execution...")
+
+    # Create the memory object to store the user preferences and the iteration responses
     mem = Memory()
     session_id = str(uuid4())
     mem.session[session_id] = []
 
     # Ask the user preferences before beginning of the agentic workflow
-    mem.preferences = user_preferences
+    mem.preferences.append(user_preferences)
+
+    # Create a decision object to make decisions for our use case
+    decision = Decision(mem, client, logger)
 
     # User query
     query = """
 TASK:
 --------------------------------
-You are given a cylindrical rod of length 10 cm and diameter 5 cm. You need to turn the rod to a diameter of 3 cm without altering the length of the rod. You need to come up with a program to do this. Remember turning is done in the XZ plane.
+You are given a cylindrical cast iron rod of length 10 cm and diameter 5 cm. You need to turn the rod to a diameter of 3 cm without altering the length of the rod. You need to come up with a program to do this. Remember turning is done in the XZ plane.
 
 Once you have the code to perform this operation, visualize the answer in a paint tool.
 """
+    logger.info(f"User Query:\n{query}\n")
+
+    current_iteration = 0
 
     try:
         # Create a single MCP server connection
@@ -77,6 +84,9 @@ Once you have the code to perform this operation, visualize the answer in a pain
                 tools = tools_result.tools
                 tools_description = get_description_from_tools(tools)
 
+                # Create an action object to execute the tools for our taks
+                action = Action(tools, mem, logger)
+
                 # Create perception output
                 perception_prompt = build_perception_prompt(tools_description, query)
                 perception_response_text = await generate_with_timeout(
@@ -86,141 +96,37 @@ Once you have the code to perform this operation, visualize the answer in a pain
                 # Validate the perceived output
                 PerceptionObject.model_validate_json(perception_response_text)
 
-                import code
-
-                code.interact(local=locals())
-
-                mem["session"][session_id].append(
-                    f"I have percieved this information from the given query {perception_response_text}"
+                mem.session[session_id].append(
+                    f"\nMY PERCEPTION\nI have percieved this information from the given query:\n{perception_response_text}"
                 )
 
-                import code
+                logger.info(f"\nPerceived the user's task and extracted this information about the task:\n{perception_response_text}")
 
-                code.interact(local=locals())
-
-                while iteration < max_iterations:
+                while current_iteration < max_iterations:
 
                     # Introduce a sleep to be generous to the cloud provider
                     # For free tier, we have a max of 15 requests per minute
-                    await asyncio.sleep(3)
+                    await asyncio.sleep(2)
 
-                    # Do a perception iteration
-
-                    print(f"\n--- Iteration {iteration + 1} ---")
-                    if last_response is None:
-                        current_query = query
-                    else:
-                        current_query = (
-                            current_query + "\n\n" + " ".join(iteration_response)
-                        )
-                        current_query = current_query + "  What should I do next?"
-
-                    # Get model's response with timeout
-                    print("Preparing to generate LLM response...")
-                    prompt = f"{system_prompt}\n\nQuery: {current_query}"
-                    print(prompt)
+                    logger.info(f"\n--- Iteration {current_iteration + 1} ---")
 
                     try:
-                        response_text = await generate_with_timeout(client, prompt)
-                        console.print(
-                            Panel(
-                                response_text,
-                                title=f"Iteration {iteration + 1}",
-                                border_style="blue",
-                                title_align="left",
-                            )
+
+                        function_call = await decision.decide(session_id, query, tools)
+
+                        to_continue = await action.execute_action(
+                            function_call, session, session_id, current_iteration + 1
                         )
 
-                        # Parse the response into a FunctionCall object
-                        try:
-                            function_call = FunctionCall.model_validate_json(
-                                response_text
-                            )
-                            logger.debug(f"Parsed function call: {function_call}")
-                        except Exception as e:
-                            logger.error(
-                                f"Failed to parse LLM response as FunctionCall: {e}"
-                            )
+                        if not to_continue:
                             break
-
-                        # Handle the function call based on its type
-                        if function_call.tool_name == FunctionName.FINAL_ANSWER:
-                            console.print(
-                                Panel(
-                                    "Agent Execution Complete",
-                                    title="Final Answer",
-                                    border_style="green",
-                                    title_align="left",
-                                )
-                            )
-                            break
-
-                        # Find the matching tool to get its input schema
-                        tool = next(
-                            (
-                                t
-                                for t in tools
-                                if t.name == function_call.tool_name.value
-                            ),
-                            None,
-                        )
-                        if not tool:
-                            logger.error(f"Available tools: {[t.name for t in tools]}")
-                            raise ValueError(
-                                f"Unknown tool: {function_call.tool_name.value}"
-                            )
-
-                        logger.debug(f"Found tool: {tool.name}")
-                        logger.debug(f"Tool schema: {tool.inputSchema}")
-
-                        result = await session.call_tool(
-                            function_call.tool_name.value,
-                            arguments=function_call.arg,
-                        )
-
-                        logger.debug(f"Raw result: {result}")
-
-                        # Get the full result content
-                        if hasattr(result, "content"):
-                            logger.debug("Result has content attribute")
-                            # Handle multiple content items
-                            if isinstance(result.content, list):
-                                iteration_result = [
-                                    (item.text if hasattr(item, "text") else str(item))
-                                    for item in result.content
-                                ]
-                            else:
-                                iteration_result = str(result.content)
-                        else:
-                            logger.debug("Result has no content attribute")
-                            iteration_result = str(result)
-
-                        logger.debug(f"Final iteration result: {iteration_result}")
-
-                        # Format the response based on result type
-                        if isinstance(iteration_result, list):
-                            result_str = f"[{', '.join(iteration_result)}]"
-                        else:
-                            result_str = str(iteration_result)
-
-                        iteration_response.append(
-                            f"In iteration {iteration + 1} you called {function_call.tool_name.value} with {function_call.arguments} parameters, "
-                            f"and the function returned {result_str}.\n"
-                        )
-                        last_response = iteration_result
 
                     except Exception as e:
                         logger.error(f"Error details: {str(e)}")
                         logger.error(f"Error type: {type(e)}")
-                        import traceback
-
-                        traceback.print_exc()
-                        iteration_response.append(
-                            f"Error in iteration {iteration + 1}: {str(e)}"
-                        )
                         break
 
-                    iteration += 1
+                    current_iteration += 1
 
     except Exception as e:
         print(f"Error in main execution: {e}")

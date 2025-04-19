@@ -199,7 +199,7 @@ def verify_step(input: VerifyStepInput) -> TextContentOutput:
 
     Args:
         input (VerifyStepInput): Input parameters containing:
-            - verification: Justification or verification of the last performed step
+            - verification (str): Justification or verification of the last performed step
 
     Returns:
         TextContentOutput: A message showing the verification of the last performed step

@@ -34,11 +34,11 @@ def open_paint_with_text_mac(text):
     # Step 6: Expand the rectangle to fit the text
     pyautogui.moveTo(504, 485)
     pyautogui.mouseDown(button="left")
-    pyautogui.dragRel(220, 120, duration=1.5, button="left")
+    pyautogui.dragRel(270, 200, duration=1.5, button="left")
     pyautogui.mouseUp(button="left")
     pyautogui.moveTo(303, 334)
     pyautogui.mouseDown(button="left")
-    pyautogui.dragRel(-180, -104, duration=1.5, button="left")
+    pyautogui.dragRel(-240, -130, duration=1.5, button="left")
     pyautogui.mouseUp(button="left")
 
     # Step 7: Click the text tool from the toolbar

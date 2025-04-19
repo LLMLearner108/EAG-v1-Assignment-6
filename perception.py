@@ -4,6 +4,25 @@ from utils import perception_response_dict
 
 
 class PerceptionObject(BaseModel):
+    """
+    The PerceptionObject class represents the structured understanding of a task.
+    It forms the first step in the Perception -> Memory -> Decision -> Action framework.
+
+    This class:
+    1. Captures the essential elements of a task
+    2. Provides a structured format for task understanding
+    3. Validates the perception using Pydantic models
+    4. Serves as input for subsequent decision making
+
+    Attributes:
+        task (str): User's complete task in short
+        start_state (str): Initial state of the object to be machined
+        material_info (str | None): Material properties if specified
+        dimension_info (dict): All dimensions mentioned in the task
+        operations (str): Machine operations mentioned in the task
+        end_state (str): Desired final state after operations
+    """
+
     task: str = Field(..., description="User's complete task in short")
     start_state: str = Field(
         ...,
@@ -26,7 +45,23 @@ class PerceptionObject(BaseModel):
     )
 
 
-def build_perception_prompt(tools_description, user_query) -> str:
+def build_perception_prompt(tools_description: str, user_query: str) -> str:
+    """
+    Build a comprehensive prompt for the perception phase.
+
+    This function:
+    1. Combines general instructions with tool descriptions
+    2. Adds special instructions and fallback handling
+    3. Includes the perception response schema
+    4. Appends the user's query
+
+    Args:
+        tools_description (str): Description of available tools
+        user_query (str): The user's task query
+
+    Returns:
+        str: A complete prompt for the perception phase
+    """
     perception_prompt = f"""
     {general_instructions}
 
